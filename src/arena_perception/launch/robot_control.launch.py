@@ -45,6 +45,8 @@ def create_controllers(context, *args, **kwargs):
         controllers.append(include_launch_file("controller.launch.py", {
             "robot_id": str(robot_id),
             "joy_device_id": str(joy_device_id),
+            "linear_axis": LaunchConfiguration("linear_axis"),
+            "angular_axis": LaunchConfiguration("angular_axis"),
         }))
 
     return controllers
@@ -61,6 +63,16 @@ def generate_launch_description():
             "first_joy_device_id",
             default_value="0",
             description="Joystick index that robot 1 uses"
+        ),
+        DeclareLaunchArgument(
+            "linear_axis",
+            default_value="4",
+            description="Joystick axis that drives forward and back"
+        ),
+        DeclareLaunchArgument(
+            "angular_axis",
+            default_value="0",
+            description="Joystick axis that turns"
         ),
         DeclareLaunchArgument(
             "name_prefix",

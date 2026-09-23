@@ -24,6 +24,8 @@ class Ps4TeleopNode(Node):
         self.declare_parameter("max_linear_speed", 0.5)
         self.declare_parameter("max_angular_speed", 1.5)
         self.declare_parameter("deadzone", 0.05)
+        self.declare_parameter("linear_threshold", 0.1)
+        self.declare_parameter("angular_threshold", 0.1)
 
         self.declare_parameter("shoulder_up_button", 2)
         self.declare_parameter("shoulder_down_button", 0)
@@ -38,6 +40,9 @@ class Ps4TeleopNode(Node):
         self.max_linear_speed = self.get_parameter("max_linear_speed").value
         self.max_angular_speed = self.get_parameter("max_angular_speed").value
         self.deadzone = self.get_parameter("deadzone").value
+        self.linear_threshold = self.get_parameter("linear_threshold").value
+        self.angular_threshold = self.get_parameter("angular_threshold").value
+        self.last_drive_command = None
 
         self.held_arm_buttons = {
             self.get_parameter("shoulder_up_button").value:
@@ -161,7 +166,28 @@ class Ps4TeleopNode(Node):
         self.warn_when_no_joy_messages()
         self.warn_when_no_bridge_is_listening()
 
+    def log_first_message(self, message: Joy):
+        axis_values = ", ".join(
+            f"{index}:{value:.2f}"
+            for index, value in enumerate(message.axes)
+        )
+
+        self.get_logger().info(
+            f"First controller message has {len(message.axes)} axes and "
+            f"{len(message.buttons)} buttons"
+        )
+
+        self.get_logger().info(f"Resting axis values: {axis_values}")
+
+        self.get_logger().info(
+            f"Using axis {self.linear_axis} to drive and axis "
+            f"{self.angular_axis} to turn"
+        )
+
     def joy_callback(self, message: Joy):
+        if self.joy_message_count == 0:
+            self.log_first_message(message)
+
         self.joy_message_count += 1
 
         self.publish_twist(message.axes)
@@ -179,6 +205,25 @@ class Ps4TeleopNode(Node):
         )
 
         self.twist_publisher.publish(twist)
+        self.log_drive_command(twist)
+
+    def log_drive_command(self, twist):
+        command = robot_commands.twist_to_drive_command(
+            twist.linear.x,
+            twist.angular.z,
+            self.linear_threshold,
+            self.angular_threshold
+        )
+
+        if command == self.last_drive_command:
+            return
+
+        self.last_drive_command = command
+
+        self.get_logger().info(
+            f"Robot {self.robot_id} drive {command} "
+            f"linear={twist.linear.x:.2f} angular={twist.angular.z:.2f}"
+        )
 
     def publish_pressed_arm_commands(self, buttons):
         for index, command in self.pressed_arm_buttons.items():
@@ -197,6 +242,8 @@ class Ps4TeleopNode(Node):
         message = String()
         message.data = command
         self.arm_publisher.publish(message)
+
+        self.get_logger().info(f"Robot {self.robot_id} arm {command}")
 
 
 def main(args=None):

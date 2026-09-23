@@ -38,6 +38,7 @@ setup(
             'autonomy_node = arena_perception.autonomy_node:main',
             'microcontroller_node = '
             'arena_perception.microcontroller_node:main',
+            'list_joysticks = arena_perception.joystick_devices:main',
         ],
     },
 )

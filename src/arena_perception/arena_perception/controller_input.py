@@ -6,6 +6,10 @@ from sensor_msgs.msg import Joy
 from std_msgs.msg import String
 
 from arena_perception import robot_commands
+from arena_perception.joystick_devices import (
+    find_joystick_device,
+    find_joystick_devices,
+)
 
 
 class Ps4TeleopNode(Node):
@@ -14,6 +18,7 @@ class Ps4TeleopNode(Node):
         super().__init__("ps4_teleop_node")
 
         self.declare_parameter("robot_id", 1)
+        self.declare_parameter("joy_device_id", 0)
         self.declare_parameter("linear_axis", 4)
         self.declare_parameter("angular_axis", 0)
         self.declare_parameter("max_linear_speed", 0.5)
@@ -73,8 +78,56 @@ class Ps4TeleopNode(Node):
             self.publish_held_arm_commands
         )
 
+        self.bridge_check_timer = self.create_timer(
+            5.0,
+            self.warn_when_no_bridge_is_listening
+        )
+
+        self.joy_device_id = self.get_parameter("joy_device_id").value
+
         self.get_logger().info(
             f"PS4 teleop node started for robot {self.robot_id}"
+        )
+
+        self.log_joystick_devices()
+
+    def log_joystick_devices(self):
+        devices = find_joystick_devices()
+
+        if not devices:
+            self.get_logger().warning(
+                "No joystick devices found under /dev/input"
+            )
+            return
+
+        self.get_logger().info(f"{len(devices)} joystick device(s) connected")
+
+        for device in devices:
+            self.get_logger().info(f"  joystick {device.index}: "
+                                   f"{device.describe()}")
+
+        bound_device = find_joystick_device(self.joy_device_id)
+
+        if bound_device is None:
+            self.get_logger().warning(
+                f"Joystick {self.joy_device_id} is not connected, so robot "
+                f"{self.robot_id} has no controller"
+            )
+            return
+
+        self.get_logger().info(
+            f"Robot {self.robot_id} is driven by joystick "
+            f"{bound_device.index}: {bound_device.describe()}"
+        )
+
+    def warn_when_no_bridge_is_listening(self):
+        if self.twist_publisher.get_subscription_count() > 0:
+            return
+
+        self.get_logger().warning(
+            f"Nothing is subscribed to /robot_{self.robot_id}/cmd_vel. "
+            f"The bridge has not discovered robot {self.robot_id} yet, so "
+            "this controller is not driving anything."
         )
 
     def apply_deadzone(self, value):

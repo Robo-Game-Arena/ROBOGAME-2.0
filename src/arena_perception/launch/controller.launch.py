@@ -45,6 +45,10 @@ def generate_launch_description():
             output="screen",
             parameters=[{
                 "robot_id": ParameterValue(robot_id, value_type=int),
+                "joy_device_id": ParameterValue(
+                    joy_device_id,
+                    value_type=int
+                ),
             }]
         ),
     ])

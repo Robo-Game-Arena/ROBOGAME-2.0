@@ -18,6 +18,7 @@ ESP32 robots.
 | `autonomy_node` | Drives a robot to a goal point using odometry |
 | `apriltag_node` | Publishes AprilTag detections from the arena camera |
 | `gazebo_viz_node` | Draws detected tags as markers in Gazebo |
+| `list_joysticks` | Lists connected joysticks and their Bluetooth addresses |
 
 ## Robot discovery
 
@@ -26,6 +27,10 @@ device advertising the Robogame BLE service, reads the robot number from the
 advertised name (`Robogame-2` becomes robot 2), then connects and subscribes
 to `/robot_2/cmd_vel` and `/robot_2/arm_command`. Robots that power on later
 are picked up automatically.
+
+Every board must be flashed from its own PlatformIO environment. Two boards
+advertising the same name cannot be told apart, and the bridge will keep the
+first one and warn about the second.
 
 The characters the bridge writes over BLE are documented in
 [PROTOCOL.md](https://github.com/Robo-Game-Arena/robogame-esp/blob/main/PROTOCOL.md)
@@ -63,6 +68,19 @@ ros2 launch arena_perception controller.launch.py robot_id:=2 joy_device_id:=1
 
 Each controller runs in its own `robot_<id>` namespace, so every joystick
 publishes to its own `joy` topic instead of sharing one.
+
+## Checking the controllers
+
+A DualShock 4 registers several input devices, so the second gamepad is not
+always `js1`. List what is connected and which index to pass:
+
+```
+ros2 run arena_perception list_joysticks
+```
+
+Each teleop node also logs every joystick it can see at startup, with the
+Bluetooth address of the one it is bound to, so the two terminals show which
+controller is driving which robot.
 
 ## Controller mapping
 

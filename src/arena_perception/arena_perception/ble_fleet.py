@@ -122,7 +122,18 @@ class BleRobotFleet:
                 continue
 
             if robot_id in self.links:
-                self.links[robot_id].update_device(device)
+                known_link = self.links[robot_id]
+
+                if known_link.address != device.address:
+                    self.logger.warning(
+                        f"Two boards are advertising as robot {robot_id}: "
+                        f"{known_link.address} and {device.address}. "
+                        "Flash each board from its own environment so that "
+                        "every robot has a unique name."
+                    )
+                    continue
+
+                known_link.update_device(device)
                 continue
 
             self.add_robot(robot_id, device)

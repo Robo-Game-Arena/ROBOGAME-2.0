@@ -116,21 +116,23 @@ is powered on.
 ## Joystick axes
 
 `joy_node` reports axes in SDL order, so axis 0 is the left stick X, axis 1
-the left stick Y, axis 2 the right stick X, axis 3 the right stick Y, and
-axes 4 and 5 are the triggers. The right stick drives on axis 3 and the left
-stick turns on axis 0.
+the left stick Y, axis 2 the right stick X, axis 3 the right stick Y, axis 4
+is L2 and axis 5 is R2. Driving uses the two triggers and turning uses the
+right stick X on axis 2.
 
-Triggers rest at full deflection, so picking a trigger axis by mistake makes
-the robot reverse constantly and never move forward. Each teleop node logs
-the resting value of every axis on the first controller message, which makes
-that easy to spot.
+Triggers rest at one end of their range rather than centred, and drivers
+disagree on whether that end reads as -1 or 0. Each trigger is measured
+against the lowest value seen for it, so a released trigger reads as zero
+either way. Each teleop node also logs the resting value of every axis on
+the first controller message.
 
 ## Controller mapping
 
 | Input | Action |
 | --- | --- |
-| Right stick | Drive forward and back |
-| Left stick | Turn |
+| R2 | Drive forward |
+| L2 | Drive backward |
+| Right stick | Turn |
 | Triangle, Cross | Shoulder up, shoulder down |
 | Circle, Square | Elbow up, elbow down |
 | R1, L1 | Gripper open, gripper close |

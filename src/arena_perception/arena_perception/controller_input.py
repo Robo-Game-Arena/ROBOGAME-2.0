@@ -19,8 +19,9 @@ class Ps4TeleopNode(Node):
 
         self.declare_parameter("robot_id", 1)
         self.declare_parameter("joy_device_id", 0)
-        self.declare_parameter("linear_axis", 3)
-        self.declare_parameter("angular_axis", 0)
+        self.declare_parameter("forward_trigger_axis", 5)
+        self.declare_parameter("backward_trigger_axis", 4)
+        self.declare_parameter("angular_axis", 2)
         self.declare_parameter("max_linear_speed", 0.5)
         self.declare_parameter("max_angular_speed", 1.5)
         self.declare_parameter("deadzone", 0.05)
@@ -35,8 +36,14 @@ class Ps4TeleopNode(Node):
         self.declare_parameter("gripper_close_button", 4)
         self.declare_parameter("arm_repeat_period", 0.15)
 
-        self.linear_axis = self.get_parameter("linear_axis").value
+        self.forward_trigger_axis = self.get_parameter(
+            "forward_trigger_axis"
+        ).value
+        self.backward_trigger_axis = self.get_parameter(
+            "backward_trigger_axis"
+        ).value
         self.angular_axis = self.get_parameter("angular_axis").value
+        self.trigger_minimums = {}
         self.max_linear_speed = self.get_parameter("max_linear_speed").value
         self.max_angular_speed = self.get_parameter("max_angular_speed").value
         self.deadzone = self.get_parameter("deadzone").value
@@ -158,6 +165,27 @@ class Ps4TeleopNode(Node):
 
         return self.apply_deadzone(axes[index])
 
+    def read_trigger(self, axes, index):
+        if index < 0 or index >= len(axes):
+            return 0.0
+
+        value = axes[index]
+        resting_value = self.trigger_minimums.get(index, value)
+
+        if value < resting_value:
+            resting_value = value
+
+        self.trigger_minimums[index] = resting_value
+
+        span = 1.0 - resting_value
+
+        if span <= 0.0:
+            return 0.0
+
+        amount = (value - resting_value) / span
+
+        return amount if amount > self.deadzone else 0.0
+
     def is_button_down(self, index):
         return 0 <= index < len(self.button_states) \
             and self.button_states[index] == 1
@@ -180,8 +208,9 @@ class Ps4TeleopNode(Node):
         self.get_logger().info(f"Resting axis values: {axis_values}")
 
         self.get_logger().info(
-            f"Using axis {self.linear_axis} to drive and axis "
-            f"{self.angular_axis} to turn"
+            f"Driving with triggers on axes {self.forward_trigger_axis} and "
+            f"{self.backward_trigger_axis}, turning with axis "
+            f"{self.angular_axis}"
         )
 
     def joy_callback(self, message: Joy):
@@ -196,10 +225,11 @@ class Ps4TeleopNode(Node):
         self.button_states = list(message.buttons)
 
     def publish_twist(self, axes):
+        forward = self.read_trigger(axes, self.forward_trigger_axis)
+        backward = self.read_trigger(axes, self.backward_trigger_axis)
+
         twist = Twist()
-        twist.linear.x = (
-            self.read_axis(axes, self.linear_axis) * self.max_linear_speed
-        )
+        twist.linear.x = (forward - backward) * self.max_linear_speed
         twist.angular.z = (
             self.read_axis(axes, self.angular_axis) * self.max_angular_speed
         )

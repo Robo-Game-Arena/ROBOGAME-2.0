@@ -11,12 +11,14 @@ class BleRobotLink:
         device,
         characteristic_uuid,
         logger,
+        radio_lock,
         retry_period=3.0
     ):
         self.robot_id = robot_id
         self.device = device
         self.characteristic_uuid = characteristic_uuid
         self.logger = logger
+        self.radio_lock = radio_lock
         self.retry_period = retry_period
 
         self.client = None
@@ -25,6 +27,9 @@ class BleRobotLink:
     @property
     def address(self):
         return self.device.address
+
+    def update_device(self, device):
+        self.device = device
 
     def is_connected(self):
         return self.client is not None and self.client.is_connected
@@ -50,7 +55,9 @@ class BleRobotLink:
                 disconnected_callback=self.on_disconnected
             )
 
-            await client.connect()
+            async with self.radio_lock:
+                await client.connect()
+
             self.client = client
 
             self.logger.info(f"Connected to robot {self.robot_id}")

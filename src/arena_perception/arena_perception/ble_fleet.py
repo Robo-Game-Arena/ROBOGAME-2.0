@@ -32,8 +32,9 @@ class BleRobotFleet:
         name_prefix,
         logger,
         on_robot_found=None,
-        scan_timeout=8.0,
-        scan_period=5.0
+        scan_timeout=5.0,
+        scan_period=5.0,
+        max_scan_period=60.0
     ):
         self.service_uuid = service_uuid
         self.characteristic_uuid = characteristic_uuid
@@ -42,10 +43,13 @@ class BleRobotFleet:
         self.on_robot_found = on_robot_found
         self.scan_timeout = scan_timeout
         self.scan_period = scan_period
+        self.max_scan_period = max_scan_period
+        self.current_scan_period = scan_period
 
         self.links = {}
         self.link_tasks = {}
         self.running = False
+        self.radio_lock = asyncio.Lock()
 
         self.event_loop = asyncio.new_event_loop()
         self.event_loop_thread = threading.Thread(
@@ -73,22 +77,39 @@ class BleRobotFleet:
         link = self.links.get(robot_id)
         return link is not None and link.is_connected()
 
+    def has_disconnected_link(self):
+        return any(
+            not link.is_connected() for link in self.links.values()
+        )
+
     async def discovery_loop(self):
         while self.running:
-            await self.scan_once()
-            await asyncio.sleep(self.scan_period)
+            found_new_robot = await self.scan_once()
+
+            if found_new_robot or self.has_disconnected_link():
+                self.current_scan_period = self.scan_period
+            else:
+                self.current_scan_period = min(
+                    self.current_scan_period * 2,
+                    self.max_scan_period
+                )
+
+            await asyncio.sleep(self.current_scan_period)
 
     async def scan_once(self):
         try:
-            found = await BleakScanner.discover(
-                timeout=self.scan_timeout,
-                service_uuids=[self.service_uuid],
-                return_adv=True
-            )
+            async with self.radio_lock:
+                found = await BleakScanner.discover(
+                    timeout=self.scan_timeout,
+                    service_uuids=[self.service_uuid],
+                    return_adv=True
+                )
 
         except Exception as error:
             self.logger.error(f"BLE scan failed: {error}")
-            return
+            return False
+
+        found_new_robot = False
 
         for device, advertisement in found.values():
             name = advertisement.local_name or device.name
@@ -101,9 +122,13 @@ class BleRobotFleet:
                 continue
 
             if robot_id in self.links:
+                self.links[robot_id].update_device(device)
                 continue
 
             self.add_robot(robot_id, device)
+            found_new_robot = True
+
+        return found_new_robot
 
     def add_robot(self, robot_id, device):
         self.logger.info(
@@ -114,7 +139,8 @@ class BleRobotFleet:
             robot_id=robot_id,
             device=device,
             characteristic_uuid=self.characteristic_uuid,
-            logger=self.logger
+            logger=self.logger,
+            radio_lock=self.radio_lock
         )
 
         self.links[robot_id] = link

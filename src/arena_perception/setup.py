@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = 'arena_perception'
@@ -15,6 +17,10 @@ setup(
             'share/' + package_name,
             ['package.xml']
         ),
+        (
+            'share/' + package_name + '/launch',
+            glob('launch/*.launch.py')
+        ),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -30,6 +36,8 @@ setup(
             'gazebo_viz_node = arena_perception.gazebo_viz_node:main',
             'controller_input = arena_perception.controller_input:main',
             'autonomy_node = arena_perception.autonomy_node:main',
+            'microcontroller_node = '
+            'arena_perception.microcontroller_node:main',
         ],
     },
 )

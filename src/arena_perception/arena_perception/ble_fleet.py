@@ -32,7 +32,7 @@ class BleRobotFleet:
         name_prefix,
         logger,
         on_robot_found=None,
-        scan_timeout=5.0,
+        scan_timeout=3.0,
         scan_period=5.0,
         max_scan_period=60.0,
         expected_robots=0
@@ -165,9 +165,10 @@ class BleRobotFleet:
         )
 
         self.links[robot_id] = link
-        self.link_tasks[robot_id] = self.event_loop.create_task(
-            link.keep_connected()
-        )
+        self.link_tasks[robot_id] = [
+            self.event_loop.create_task(link.keep_connected()),
+            self.event_loop.create_task(link.write_pending_commands()),
+        ]
 
         if self.on_robot_found is not None:
             self.on_robot_found(robot_id)
@@ -178,16 +179,14 @@ class BleRobotFleet:
         if link is None or not self.running:
             return
 
-        asyncio.run_coroutine_threadsafe(
-            link.write_command(command),
-            self.event_loop
-        )
+        self.event_loop.call_soon_threadsafe(link.queue_command, command)
 
     async def shutdown_all(self):
         self.running = False
 
-        for task in self.link_tasks.values():
-            task.cancel()
+        for tasks in self.link_tasks.values():
+            for task in tasks:
+                task.cancel()
 
         for link in self.links.values():
             await link.shutdown()

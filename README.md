@@ -29,9 +29,14 @@ to `/robot_2/cmd_vel` and `/robot_2/arm_command`. Robots that power on later
 are picked up automatically.
 
 Scanning and connections share one radio, so scanning while robots are
-connected can drop them. Discovery backs off as it finds nothing new, and
-stops completely once `expected_robots` robots are connected. Reconnecting
-never needs a scan, so a robot that drops is picked straight back up.
+connected can drop them and add latency. Discovery backs off as it finds
+nothing new, and stops completely once `expected_robots` robots are
+connected. Reconnecting never needs a scan, so a robot that drops is picked
+straight back up.
+
+Commands are not queued. Each robot has one writer that always sends the
+most recent command, so a slow radio drops stale commands instead of
+building a backlog that grows the delay between the stick and the robot.
 
 Every board must be flashed from its own PlatformIO environment. Two boards
 advertising the same name cannot be told apart, and the bridge will keep the

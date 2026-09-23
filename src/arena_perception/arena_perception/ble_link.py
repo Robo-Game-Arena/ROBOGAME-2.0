@@ -22,7 +22,10 @@ class BleRobotLink:
         self.retry_period = retry_period
 
         self.client = None
-        self.running = False
+        self.running = True
+
+        self.pending_command = None
+        self.command_ready = asyncio.Event()
 
     @property
     def address(self):
@@ -34,9 +37,24 @@ class BleRobotLink:
     def is_connected(self):
         return self.client is not None and self.client.is_connected
 
-    async def keep_connected(self):
-        self.running = True
+    def queue_command(self, command):
+        self.pending_command = command
+        self.command_ready.set()
 
+    async def write_pending_commands(self):
+        while self.running:
+            await self.command_ready.wait()
+            self.command_ready.clear()
+
+            command = self.pending_command
+            self.pending_command = None
+
+            if command is None:
+                continue
+
+            await self.write_command(command)
+
+    async def keep_connected(self):
         while self.running:
             if self.is_connected():
                 await asyncio.sleep(1.0)
@@ -93,6 +111,7 @@ class BleRobotLink:
 
     async def shutdown(self):
         self.running = False
+        self.command_ready.set()
 
         if not self.is_connected():
             return

@@ -6,14 +6,20 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    device_name = LaunchConfiguration("device_name")
+    robot_id = LaunchConfiguration("robot_id")
+    name_prefix = LaunchConfiguration("name_prefix")
     joy_device_id = LaunchConfiguration("joy_device_id")
 
     return LaunchDescription([
         DeclareLaunchArgument(
-            "device_name",
-            default_value="XIAO-C3-Robot",
-            description="BLE advertised name of the ESP32 robot"
+            "robot_id",
+            default_value="1",
+            description="Robot this controller drives"
+        ),
+        DeclareLaunchArgument(
+            "name_prefix",
+            default_value="Robogame",
+            description="BLE name prefix every robot advertises"
         ),
         DeclareLaunchArgument(
             "joy_device_id",
@@ -38,7 +44,10 @@ def generate_launch_description():
             package="arena_perception",
             executable="controller_input",
             name="ps4_teleop_node",
-            output="screen"
+            output="screen",
+            parameters=[{
+                "robot_id": ParameterValue(robot_id, value_type=int),
+            }]
         ),
         Node(
             package="arena_perception",
@@ -46,7 +55,7 @@ def generate_launch_description():
             name="microcontroller_node",
             output="screen",
             parameters=[{
-                "device_name": device_name,
+                "name_prefix": name_prefix,
             }]
         ),
     ])

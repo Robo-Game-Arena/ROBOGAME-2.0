@@ -13,6 +13,7 @@ class Ps4TeleopNode(Node):
     def __init__(self):
         super().__init__("ps4_teleop_node")
 
+        self.declare_parameter("robot_id", 1)
         self.declare_parameter("linear_axis", 1)
         self.declare_parameter("angular_axis", 3)
         self.declare_parameter("max_linear_speed", 0.5)
@@ -53,11 +54,14 @@ class Ps4TeleopNode(Node):
 
         self.button_states = []
 
+        self.robot_id = self.get_parameter("robot_id").value
+        namespace = f"/robot_{self.robot_id}"
+
         self.twist_publisher = self.create_publisher(
-            Twist, "/robot_1/cmd_vel", 10
+            Twist, f"{namespace}/cmd_vel", 10
         )
         self.arm_publisher = self.create_publisher(
-            String, "/robot_1/arm_command", 10
+            String, f"{namespace}/arm_command", 10
         )
 
         self.subscription = self.create_subscription(
@@ -69,7 +73,9 @@ class Ps4TeleopNode(Node):
             self.publish_held_arm_commands
         )
 
-        self.get_logger().info("PS4 teleop node started")
+        self.get_logger().info(
+            f"PS4 teleop node started for robot {self.robot_id}"
+        )
 
     def apply_deadzone(self, value):
         return value if abs(value) > self.deadzone else 0.0

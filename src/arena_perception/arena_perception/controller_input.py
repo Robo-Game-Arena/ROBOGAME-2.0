@@ -78,9 +78,11 @@ class Ps4TeleopNode(Node):
             self.publish_held_arm_commands
         )
 
-        self.bridge_check_timer = self.create_timer(
+        self.joy_message_count = 0
+
+        self.diagnostics_timer = self.create_timer(
             5.0,
-            self.warn_when_no_bridge_is_listening
+            self.report_input_problems
         )
 
         self.joy_device_id = self.get_parameter("joy_device_id").value
@@ -106,18 +108,30 @@ class Ps4TeleopNode(Node):
             self.get_logger().info(f"  joystick {device.index}: "
                                    f"{device.describe()}")
 
-        bound_device = find_joystick_device(self.joy_device_id)
+        self.get_logger().info(
+            f"Robot {self.robot_id} is configured for joy_device_id "
+            f"{self.joy_device_id}"
+        )
 
-        if bound_device is None:
+        if find_joystick_device(self.joy_device_id) is None:
             self.get_logger().warning(
-                f"Joystick {self.joy_device_id} is not connected, so robot "
-                f"{self.robot_id} has no controller"
+                f"No /dev/input/js{self.joy_device_id} is connected"
             )
-            return
 
         self.get_logger().info(
-            f"Robot {self.robot_id} is driven by joystick "
-            f"{bound_device.index}: {bound_device.describe()}"
+            "joy_node chooses the device, so this index is not guaranteed to "
+            f"be /dev/input/js{self.joy_device_id}. Watch the joy topic to "
+            "confirm which controller this robot is reading."
+        )
+
+    def warn_when_no_joy_messages(self):
+        if self.joy_message_count > 0:
+            return
+
+        self.get_logger().warning(
+            f"No messages received on {self.subscription.topic_name}. "
+            f"joy_node may be reading a device other than joy_device_id "
+            f"{self.joy_device_id}, or this controller is not connected."
         )
 
     def warn_when_no_bridge_is_listening(self):
@@ -143,7 +157,13 @@ class Ps4TeleopNode(Node):
         return 0 <= index < len(self.button_states) \
             and self.button_states[index] == 1
 
+    def report_input_problems(self):
+        self.warn_when_no_joy_messages()
+        self.warn_when_no_bridge_is_listening()
+
     def joy_callback(self, message: Joy):
+        self.joy_message_count += 1
+
         self.publish_twist(message.axes)
         self.publish_pressed_arm_commands(message.buttons)
 

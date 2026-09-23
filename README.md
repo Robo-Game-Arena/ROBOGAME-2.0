@@ -78,9 +78,20 @@ always `js1`. List what is connected and which index to pass:
 ros2 run arena_perception list_joysticks
 ```
 
-Each teleop node also logs every joystick it can see at startup, with the
-Bluetooth address of the one it is bound to, so the two terminals show which
-controller is driving which robot.
+Each teleop node logs every joystick it can see at startup, with Bluetooth
+addresses, and warns if it receives no controller input or if no bridge is
+listening for its robot.
+
+`joy_node` selects the device itself, so `joy_device_id` is not guaranteed to
+match `/dev/input/jsN`. To find which controller feeds which robot, start
+both controllers, then watch one topic at a time and move the sticks:
+
+```
+ros2 topic echo /robot_1/joy
+ros2 topic echo /robot_2/joy
+```
+
+Swap the two `joy_device_id` values if a controller drives the wrong robot.
 
 ## Controller mapping
 

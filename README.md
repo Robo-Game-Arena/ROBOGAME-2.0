@@ -27,6 +27,10 @@ advertised name (`Robogame-2` becomes robot 2), then connects and subscribes
 to `/robot_2/cmd_vel` and `/robot_2/arm_command`. Robots that power on later
 are picked up automatically.
 
+The characters the bridge writes over BLE are documented in
+[PROTOCOL.md](https://github.com/Robo-Game-Arena/robogame-esp/blob/main/PROTOCOL.md)
+in the firmware repository.
+
 ## Build and run
 
 ```

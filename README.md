@@ -31,6 +31,16 @@ The characters the bridge writes over BLE are documented in
 [PROTOCOL.md](https://github.com/Robo-Game-Arena/robogame-esp/blob/main/PROTOCOL.md)
 in the firmware repository.
 
+## Install
+
+`install.sh` installs ROS2 Jazzy if it is missing, pulls the build tools and
+Python dependencies, resolves package dependencies with rosdep, then builds
+the workspace. It targets Ubuntu, and skips the apt steps on other systems.
+
+```
+./install.sh
+```
+
 ## Build and run
 
 ```

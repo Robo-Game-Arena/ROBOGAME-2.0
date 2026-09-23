@@ -125,9 +125,6 @@ class MicrocontrollerNode(Node):
 
     def send_keepalive(self):
         for robot_id, command in self.drive_commands.items():
-            if command == robot_commands.STOP:
-                continue
-
             self.fleet.send(robot_id, command)
 
     def destroy_node(self):

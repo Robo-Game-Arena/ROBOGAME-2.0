@@ -67,8 +67,7 @@ robots:
 ros2 launch arena_perception robot_control.launch.py robot_count:=4
 ```
 
-Robot `N` always uses joystick `N - 1`. Shift that mapping with
-`first_joy_device_id` if the joysticks start at a different index.
+Robot `N` always uses joystick `N - 1`.
 
 Each controller runs in its own `robot_<id>` namespace, so every joystick
 publishes to its own `joy` topic instead of sharing one.
@@ -109,27 +108,17 @@ Each teleop node logs every drive and arm command it publishes, whether or
 not a robot is connected, so the controllers can be checked before any robot
 is powered on.
 
-## Choosing the joystick axes
+## Joystick axes
 
-Axis numbering differs between controllers and drivers. The defaults are for
-a DualShock 4, where axis 4 is the right stick and axis 0 is the left stick.
+`joy_node` reports axes in SDL order, so axis 0 is the left stick X, axis 1
+the left stick Y, axis 2 the right stick X, axis 3 the right stick Y, and
+axes 4 and 5 are the triggers. The right stick drives on axis 3 and the left
+stick turns on axis 0.
 
-On the first controller message each teleop node logs the axis count and the
-resting value of every axis. An axis resting near 1 or -1 is a trigger, not a
-stick. Using a trigger to drive makes the robot reverse constantly, because
-it rests at full deflection.
-
-Find the right numbers by moving one stick at a time:
-
-```
-ros2 topic echo /robot_1/joy
-```
-
-Then pass them in:
-
-```
-ros2 launch arena_perception robot_control.launch.py linear_axis:=4 angular_axis:=0
-```
+Triggers rest at full deflection, so picking a trigger axis by mistake makes
+the robot reverse constantly and never move forward. Each teleop node logs
+the resting value of every axis on the first controller message, which makes
+that easy to spot.
 
 ## Controller mapping
 

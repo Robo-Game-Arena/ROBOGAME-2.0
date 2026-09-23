@@ -19,7 +19,7 @@ class Ps4TeleopNode(Node):
 
         self.declare_parameter("robot_id", 1)
         self.declare_parameter("joy_device_id", 0)
-        self.declare_parameter("linear_axis", 4)
+        self.declare_parameter("linear_axis", 3)
         self.declare_parameter("angular_axis", 0)
         self.declare_parameter("max_linear_speed", 0.5)
         self.declare_parameter("max_angular_speed", 1.5)

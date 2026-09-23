@@ -33,20 +33,12 @@ def create_controllers(context, *args, **kwargs):
         LaunchConfiguration("robot_count").perform(context)
     )
 
-    first_joy_device_id = int(
-        LaunchConfiguration("first_joy_device_id").perform(context)
-    )
-
     controllers = []
 
     for robot_id in range(1, robot_count + 1):
-        joy_device_id = first_joy_device_id + robot_id - 1
-
         controllers.append(include_launch_file("controller.launch.py", {
             "robot_id": str(robot_id),
-            "joy_device_id": str(joy_device_id),
-            "linear_axis": LaunchConfiguration("linear_axis"),
-            "angular_axis": LaunchConfiguration("angular_axis"),
+            "joy_device_id": str(robot_id - 1),
         }))
 
     return controllers
@@ -58,21 +50,6 @@ def generate_launch_description():
             "robot_count",
             default_value="2",
             description="Number of robots and controllers to start"
-        ),
-        DeclareLaunchArgument(
-            "first_joy_device_id",
-            default_value="0",
-            description="Joystick index that robot 1 uses"
-        ),
-        DeclareLaunchArgument(
-            "linear_axis",
-            default_value="4",
-            description="Joystick axis that drives forward and back"
-        ),
-        DeclareLaunchArgument(
-            "angular_axis",
-            default_value="0",
-            description="Joystick axis that turns"
         ),
         DeclareLaunchArgument(
             "name_prefix",

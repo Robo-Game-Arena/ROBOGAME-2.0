@@ -30,6 +30,7 @@ class MicrocontrollerNode(Node):
         self.declare_parameter("keepalive_period", 0.25)
         self.declare_parameter("scan_period", 5.0)
         self.declare_parameter("max_scan_period", 60.0)
+        self.declare_parameter("expected_robots", 0)
 
         self.linear_threshold = self.get_parameter("linear_threshold").value
         self.angular_threshold = self.get_parameter("angular_threshold").value
@@ -47,7 +48,8 @@ class MicrocontrollerNode(Node):
             logger=self.get_logger(),
             on_robot_found=self.discovered_robots.put,
             scan_period=self.get_parameter("scan_period").value,
-            max_scan_period=self.get_parameter("max_scan_period").value
+            max_scan_period=self.get_parameter("max_scan_period").value,
+            expected_robots=self.get_parameter("expected_robots").value
         )
         self.fleet.start()
 

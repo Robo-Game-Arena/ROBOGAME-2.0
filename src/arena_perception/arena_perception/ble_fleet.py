@@ -34,7 +34,8 @@ class BleRobotFleet:
         on_robot_found=None,
         scan_timeout=5.0,
         scan_period=5.0,
-        max_scan_period=60.0
+        max_scan_period=60.0,
+        expected_robots=0
     ):
         self.service_uuid = service_uuid
         self.characteristic_uuid = characteristic_uuid
@@ -45,6 +46,7 @@ class BleRobotFleet:
         self.scan_period = scan_period
         self.max_scan_period = max_scan_period
         self.current_scan_period = scan_period
+        self.expected_robots = expected_robots
 
         self.links = {}
         self.link_tasks = {}
@@ -77,16 +79,24 @@ class BleRobotFleet:
         link = self.links.get(robot_id)
         return link is not None and link.is_connected()
 
-    def has_disconnected_link(self):
-        return any(
-            not link.is_connected() for link in self.links.values()
+    def has_found_every_robot(self):
+        return (
+            self.expected_robots > 0
+            and len(self.links) >= self.expected_robots
         )
 
     async def discovery_loop(self):
         while self.running:
+            if self.has_found_every_robot():
+                self.logger.info(
+                    f"All {self.expected_robots} robots found, "
+                    "stopping discovery"
+                )
+                return
+
             found_new_robot = await self.scan_once()
 
-            if found_new_robot or self.has_disconnected_link():
+            if found_new_robot:
                 self.current_scan_period = self.scan_period
             else:
                 self.current_scan_period = min(

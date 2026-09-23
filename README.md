@@ -28,6 +28,11 @@ advertised name (`Robogame-2` becomes robot 2), then connects and subscribes
 to `/robot_2/cmd_vel` and `/robot_2/arm_command`. Robots that power on later
 are picked up automatically.
 
+Scanning and connections share one radio, so scanning while robots are
+connected can drop them. Discovery backs off as it finds nothing new, and
+stops completely once `expected_robots` robots are connected. Reconnecting
+never needs a scan, so a robot that drops is picked straight back up.
+
 Every board must be flashed from its own PlatformIO environment. Two boards
 advertising the same name cannot be told apart, and the bridge will keep the
 first one and warn about the second.
@@ -54,20 +59,27 @@ source install/setup.bash
 ros2 launch arena_perception robot_control.launch.py
 ```
 
-That starts the BLE bridge and one controller for robot 1.
-
-For more than one robot, start the bridge once and then one controller per
-robot. The bridge talks to every robot it finds, so it must not be started
-twice.
+That starts the BLE bridge and two controllers, mapping robot 1 to joystick
+0 and robot 2 to joystick 1. Use `robot_count` for a different number of
+robots:
 
 ```
-ros2 launch arena_perception bridge.launch.py
-ros2 launch arena_perception controller.launch.py robot_id:=1 joy_device_id:=0
-ros2 launch arena_perception controller.launch.py robot_id:=2 joy_device_id:=1
+ros2 launch arena_perception robot_control.launch.py robot_count:=4
 ```
+
+Robot `N` always uses joystick `N - 1`. Shift that mapping with
+`first_joy_device_id` if the joysticks start at a different index.
 
 Each controller runs in its own `robot_<id>` namespace, so every joystick
 publishes to its own `joy` topic instead of sharing one.
+
+The bridge talks to every robot it finds, so start it once. The pieces can
+also be launched separately:
+
+```
+ros2 launch arena_perception bridge.launch.py expected_robots:=2
+ros2 launch arena_perception controller.launch.py robot_id:=1 joy_device_id:=0
+```
 
 ## Checking the controllers
 

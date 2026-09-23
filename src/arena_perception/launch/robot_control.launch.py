@@ -3,52 +3,73 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
 
-def generate_launch_description():
-    launch_dir = os.path.join(
+def launch_directory():
+    return os.path.join(
         get_package_share_directory("arena_perception"),
         "launch"
     )
 
-    robot_id = LaunchConfiguration("robot_id")
-    name_prefix = LaunchConfiguration("name_prefix")
-    joy_device_id = LaunchConfiguration("joy_device_id")
 
+def include_launch_file(name, launch_arguments):
+    return IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(launch_directory(), name)
+        ),
+        launch_arguments=launch_arguments.items()
+    )
+
+
+def create_controllers(context, *args, **kwargs):
+    robot_count = int(
+        LaunchConfiguration("robot_count").perform(context)
+    )
+
+    first_joy_device_id = int(
+        LaunchConfiguration("first_joy_device_id").perform(context)
+    )
+
+    controllers = []
+
+    for robot_id in range(1, robot_count + 1):
+        joy_device_id = first_joy_device_id + robot_id - 1
+
+        controllers.append(include_launch_file("controller.launch.py", {
+            "robot_id": str(robot_id),
+            "joy_device_id": str(joy_device_id),
+        }))
+
+    return controllers
+
+
+def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
-            "robot_id",
-            default_value="1",
-            description="Robot this controller drives"
+            "robot_count",
+            default_value="2",
+            description="Number of robots and controllers to start"
+        ),
+        DeclareLaunchArgument(
+            "first_joy_device_id",
+            default_value="0",
+            description="Joystick index that robot 1 uses"
         ),
         DeclareLaunchArgument(
             "name_prefix",
             default_value="Robogame",
             description="BLE name prefix every robot advertises"
         ),
-        DeclareLaunchArgument(
-            "joy_device_id",
-            default_value="0",
-            description="Index of the joystick device to read"
-        ),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(launch_dir, "bridge.launch.py")
-            ),
-            launch_arguments={
-                "name_prefix": name_prefix,
-            }.items()
-        ),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(launch_dir, "controller.launch.py")
-            ),
-            launch_arguments={
-                "robot_id": robot_id,
-                "joy_device_id": joy_device_id,
-            }.items()
-        ),
+        include_launch_file("bridge.launch.py", {
+            "name_prefix": LaunchConfiguration("name_prefix"),
+            "expected_robots": LaunchConfiguration("robot_count"),
+        }),
+        OpaqueFunction(function=create_controllers),
     ])

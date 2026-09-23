@@ -49,19 +49,27 @@ source install/setup.bash
 ros2 launch arena_perception robot_control.launch.py
 ```
 
-Use a second controller by launching again with a different robot and
-joystick:
+That starts the BLE bridge and one controller for robot 1.
+
+For more than one robot, start the bridge once and then one controller per
+robot. The bridge talks to every robot it finds, so it must not be started
+twice.
 
 ```
-ros2 launch arena_perception robot_control.launch.py robot_id:=2 joy_device_id:=1
+ros2 launch arena_perception bridge.launch.py
+ros2 launch arena_perception controller.launch.py robot_id:=1 joy_device_id:=0
+ros2 launch arena_perception controller.launch.py robot_id:=2 joy_device_id:=1
 ```
+
+Each controller runs in its own `robot_<id>` namespace, so every joystick
+publishes to its own `joy` topic instead of sharing one.
 
 ## Controller mapping
 
 | Input | Action |
 | --- | --- |
-| Left stick | Drive forward and back |
-| Right stick | Turn |
+| Right stick | Drive forward and back |
+| Left stick | Turn |
 | Triangle, Cross | Shoulder up, shoulder down |
 | Circle, Square | Elbow up, elbow down |
 | R1, L1 | Gripper open, gripper close |

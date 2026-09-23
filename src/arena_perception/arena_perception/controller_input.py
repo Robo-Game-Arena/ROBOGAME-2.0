@@ -14,8 +14,8 @@ class Ps4TeleopNode(Node):
         super().__init__("ps4_teleop_node")
 
         self.declare_parameter("robot_id", 1)
-        self.declare_parameter("linear_axis", 1)
-        self.declare_parameter("angular_axis", 3)
+        self.declare_parameter("linear_axis", 4)
+        self.declare_parameter("angular_axis", 0)
         self.declare_parameter("max_linear_speed", 0.5)
         self.declare_parameter("max_angular_speed", 1.5)
         self.declare_parameter("deadzone", 0.05)
@@ -65,7 +65,7 @@ class Ps4TeleopNode(Node):
         )
 
         self.subscription = self.create_subscription(
-            Joy, "/joy", self.joy_callback, 10
+            Joy, "joy", self.joy_callback, 10
         )
 
         self.arm_timer = self.create_timer(

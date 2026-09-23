@@ -143,13 +143,12 @@ class Ps4TeleopNode(Node):
         self.button_states = list(message.buttons)
 
     def publish_twist(self, axes):
+        stick_forward = -self.read_axis(axes, self.linear_axis)
+        stick_left = -self.read_axis(axes, self.angular_axis)
+
         twist = Twist()
-        twist.linear.x = (
-            self.read_axis(axes, self.linear_axis) * self.max_linear_speed
-        )
-        twist.angular.z = (
-            self.read_axis(axes, self.angular_axis) * self.max_angular_speed
-        )
+        twist.linear.x = stick_forward * self.max_linear_speed
+        twist.angular.z = stick_left * self.max_angular_speed
 
         self.twist_publisher.publish(twist)
         self.log_drive_command(twist)

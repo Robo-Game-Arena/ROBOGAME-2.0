@@ -123,6 +123,10 @@ Triggers rest at full deflection rather than centred, so using one as a
 drive or turn axis makes the robot move on its own. Each teleop node logs
 the axes it is using at startup.
 
+Joystick axes report up and left as negative, while a Twist uses positive
+for forward and positive for a left turn, so both axes are negated before
+they are published.
+
 ## Controller mapping
 
 | Input | Action |

@@ -115,23 +115,19 @@ is powered on.
 
 ## Joystick axes
 
-`joy_node` reports axes in SDL order, so axis 0 is the left stick X, axis 1
-the left stick Y, axis 2 the right stick X, axis 3 the right stick Y, axis 4
-is L2 and axis 5 is R2. Driving uses the two triggers and turning uses the
-right stick X on axis 2.
+A DualShock 4 reports axis 0 as the left stick X, axis 1 as the left stick
+Y, axis 2 as L2, axis 3 as the right stick X, axis 4 as the right stick Y
+and axis 5 as R2. Driving uses axis 1 and turning uses axis 3.
 
-Triggers rest at one end of their range rather than centred, and drivers
-disagree on whether that end reads as -1 or 0. Each trigger is measured
-against the lowest value seen for it, so a released trigger reads as zero
-either way. Each teleop node also logs the resting value of every axis on
-the first controller message.
+Triggers rest at full deflection rather than centred, so using one as a
+drive or turn axis makes the robot move on its own. Each teleop node logs
+the axes it is using at startup.
 
 ## Controller mapping
 
 | Input | Action |
 | --- | --- |
-| R2 | Drive forward |
-| L2 | Drive backward |
+| Left stick | Drive forward and back |
 | Right stick | Turn |
 | Triangle, Cross | Shoulder up, shoulder down |
 | Circle, Square | Elbow up, elbow down |

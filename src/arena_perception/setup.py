@@ -21,6 +21,10 @@ setup(
             'share/' + package_name + '/launch',
             glob('launch/*.launch.py')
         ),
+        (
+            'share/' + package_name + '/config',
+            glob('config/*.yaml')
+        ),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -39,6 +43,8 @@ setup(
             'microcontroller_node = '
             'arena_perception.microcontroller_node:main',
             'list_joysticks = arena_perception.joystick_devices:main',
+            'gamepad_node = arena_perception.gamepad_node:main',
+            'assign_controllers = arena_perception.assign_controllers:main',
         ],
     },
 )

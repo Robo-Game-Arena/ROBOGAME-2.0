@@ -52,6 +52,7 @@ class BleRobotFleet:
         self.link_tasks = {}
         self.running = False
         self.radio_lock = asyncio.Lock()
+        self.scan_requested = asyncio.Event()
 
         self.event_loop = asyncio.new_event_loop()
         self.event_loop_thread = threading.Thread(
@@ -79,24 +80,40 @@ class BleRobotFleet:
         link = self.links.get(robot_id)
         return link is not None and link.is_connected()
 
-    def has_found_every_robot(self):
-        return (
-            self.expected_robots > 0
-            and len(self.links) >= self.expected_robots
-        )
+    def needs_discovery(self):
+        if self.expected_robots <= 0:
+            return True
+
+        if len(self.links) < self.expected_robots:
+            return True
+
+        return not all(link.is_connected() for link in self.links.values())
+
+    def request_scan(self, robot_id):
+        self.current_scan_period = self.scan_period
+        self.scan_requested.set()
+
+    async def wait_for_scan_request(self, timeout=None):
+        try:
+            await asyncio.wait_for(self.scan_requested.wait(), timeout)
+        except asyncio.TimeoutError:
+            pass
+
+        self.scan_requested.clear()
 
     async def discovery_loop(self):
         while self.running:
-            if self.has_found_every_robot():
+            if not self.needs_discovery():
                 self.logger.info(
-                    f"All {self.expected_robots} robots found, "
-                    "stopping discovery"
+                    f"All {self.expected_robots} robots connected, "
+                    "pausing discovery until one drops"
                 )
-                return
+                await self.wait_for_scan_request()
+                continue
 
-            found_new_robot = await self.scan_once()
+            found_robot = await self.scan_once()
 
-            if found_new_robot:
+            if found_robot:
                 self.current_scan_period = self.scan_period
             else:
                 self.current_scan_period = min(
@@ -104,7 +121,7 @@ class BleRobotFleet:
                     self.max_scan_period
                 )
 
-            await asyncio.sleep(self.current_scan_period)
+            await self.wait_for_scan_request(self.current_scan_period)
 
     async def scan_once(self):
         try:
@@ -119,7 +136,7 @@ class BleRobotFleet:
             self.logger.error(f"BLE scan failed: {error}")
             return False
 
-        found_new_robot = False
+        found_robot = False
 
         for device, advertisement in found.values():
             name = advertisement.local_name or device.name
@@ -131,25 +148,29 @@ class BleRobotFleet:
                 )
                 continue
 
-            if robot_id in self.links:
-                known_link = self.links[robot_id]
+            link = self.links.get(robot_id)
 
-                if known_link.address != device.address:
-                    self.logger.warning(
-                        f"Two boards are advertising as robot {robot_id}: "
-                        f"{known_link.address} and {device.address}. "
-                        "Flash each board from its own environment so that "
-                        "every robot has a unique name."
-                    )
-                    continue
-
-                known_link.update_device(device)
+            if link is None:
+                self.add_robot(robot_id, device)
+                found_robot = True
                 continue
 
-            self.add_robot(robot_id, device)
-            found_new_robot = True
+            if link.address != device.address:
+                self.logger.warning(
+                    f"Two boards are advertising as robot {robot_id}: "
+                    f"{link.address} and {device.address}. "
+                    "Flash each board from its own environment so that "
+                    "every robot has a unique name."
+                )
+                continue
 
-        return found_new_robot
+            if not link.is_connected():
+                self.logger.info(f"Robot {robot_id} is advertising again")
+                found_robot = True
+
+            link.update_device(device)
+
+        return found_robot
 
     def add_robot(self, robot_id, device):
         self.logger.info(
@@ -161,7 +182,8 @@ class BleRobotFleet:
             device=device,
             characteristic_uuid=self.characteristic_uuid,
             logger=self.logger,
-            radio_lock=self.radio_lock
+            radio_lock=self.radio_lock,
+            on_connect_failed=self.request_scan
         )
 
         self.links[robot_id] = link
@@ -173,16 +195,33 @@ class BleRobotFleet:
         if self.on_robot_found is not None:
             self.on_robot_found(robot_id)
 
-    def send(self, robot_id, command):
-        link = self.links.get(robot_id)
+    def running_link(self, robot_id):
+        if not self.running:
+            return None
 
-        if link is None or not self.running:
-            return
+        return self.links.get(robot_id)
 
-        self.event_loop.call_soon_threadsafe(link.queue_command, command)
+    def send_drive_command(self, robot_id, command):
+        link = self.running_link(robot_id)
+
+        if link is not None:
+            self.event_loop.call_soon_threadsafe(
+                link.queue_drive_command,
+                command
+            )
+
+    def send_arm_command(self, robot_id, command):
+        link = self.running_link(robot_id)
+
+        if link is not None:
+            self.event_loop.call_soon_threadsafe(
+                link.queue_arm_command,
+                command
+            )
 
     async def shutdown_all(self):
         self.running = False
+        self.scan_requested.set()
 
         for tasks in self.link_tasks.values():
             for task in tasks:

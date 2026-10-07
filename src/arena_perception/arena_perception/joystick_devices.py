@@ -1,7 +1,20 @@
 import glob
 import os
+import struct
 
 SYSFS_INPUT_PATH = "/sys/class/input"
+
+# Each read from /dev/input/jsN returns whole js_event structs from
+# linux/joystick.h: a timestamp, a value, a type and an axis or button index.
+JS_EVENT_FORMAT = "IhBB"
+JS_EVENT_SIZE = struct.calcsize(JS_EVENT_FORMAT)
+JS_EVENT_BUTTON = 0x01
+JS_EVENT_AXIS = 0x02
+JS_EVENT_INIT = 0x80
+
+
+class JoystickDisconnected(Exception):
+    pass
 
 
 def read_attribute(device_directory, attribute_name):
@@ -65,6 +78,42 @@ def find_joystick_device(index):
             return device
 
     return None
+
+
+def find_joystick_device_by_address(address):
+    for device in find_joystick_devices():
+        if device.address == address:
+            return device
+
+    return None
+
+
+def open_joystick(device):
+    return os.open(device.path, os.O_RDONLY | os.O_NONBLOCK)
+
+
+def read_joystick_events(file_descriptor, max_events=64):
+    try:
+        data = os.read(file_descriptor, JS_EVENT_SIZE * max_events)
+    except BlockingIOError:
+        return []
+    except OSError as error:
+        raise JoystickDisconnected(error.strerror) from error
+
+    if not data:
+        raise JoystickDisconnected("device closed")
+
+    events = []
+
+    for offset in range(0, len(data) - JS_EVENT_SIZE + 1, JS_EVENT_SIZE):
+        _, value, event_type, number = struct.unpack_from(
+            JS_EVENT_FORMAT,
+            data,
+            offset
+        )
+        events.append((event_type, number, value))
+
+    return events
 
 
 def main():

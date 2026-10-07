@@ -14,11 +14,13 @@ ESP32 robots.
 | Node | Purpose |
 | --- | --- |
 | `microcontroller_node` | Finds robots over BLE and relays commands to them |
+| `gamepad_node` | Reads one PS4 controller, chosen by Bluetooth address, and publishes `joy` |
 | `controller_input` | Turns PS4 controller input into velocity and arm commands |
 | `autonomy_node` | Drives a robot to a goal point using odometry |
 | `apriltag_node` | Publishes AprilTag detections from the arena camera |
 | `gazebo_viz_node` | Draws detected tags as markers in Gazebo |
 | `list_joysticks` | Lists connected joysticks and their Bluetooth addresses |
+| `assign_controllers` | Records which controller drives which robot |
 
 ## Robot discovery
 
@@ -30,13 +32,26 @@ are picked up automatically.
 
 Scanning and connections share one radio, so scanning while robots are
 connected can drop them and add latency. Discovery backs off as it finds
-nothing new, and stops completely once `expected_robots` robots are
-connected. Reconnecting never needs a scan, so a robot that drops is picked
-straight back up.
+nothing new, and pauses once `expected_robots` robots are connected.
 
-Commands are not queued. Each robot has one writer that always sends the
-most recent command, so a slow radio drops stale commands instead of
-building a backlog that grows the delay between the stick and the robot.
+A robot that drops is reconnected straight away if it is still advertising.
+If that fails, for example because the robot was power cycled, BlueZ has
+forgotten the old device and a new scan is needed. The link then waits for
+discovery to see the robot advertising again, and discovery resumes at its
+fastest rate until it does.
+
+Drive commands are not queued. Each robot has one writer that always sends
+the most recent drive command, so a slow radio drops stale commands instead
+of building a backlog that grows the delay between the stick and the robot.
+Arm commands each move a joint one step, so they are kept and sent in order
+alongside the drive command. Each robot gets at most 20 writes a second.
+
+By default the bridge sends proportional speeds: `cmd_vel` becomes a forward
+speed and a turn, each as a percentage, and the robot mixes them into left
+and right wheel speeds. `linear.x` of `full_linear_speed` (0.5) and
+`angular.z` of `full_angular_speed` (1.5) are full power. Launching with
+`drive_mode:=letters` sends the older single letters instead, which drive
+at full speed in one direction at a time.
 
 Every board must be flashed from its own PlatformIO environment. Two boards
 advertising the same name cannot be told apart, and the bridge will keep the
@@ -59,55 +74,86 @@ the workspace. It targets Ubuntu, and skips the apt steps on other systems.
 ## Build and run
 
 ```
-colcon build --packages-select arena_perception
+colcon build --symlink-install --packages-select arena_perception
 source install/setup.bash
 ros2 launch arena_perception robot_control.launch.py
 ```
 
-That starts the BLE bridge and two controllers, mapping robot 1 to joystick
-0 and robot 2 to joystick 1. Use `robot_count` for a different number of
-robots:
+That starts the BLE bridge, and for every robot listed in
+`src/arena_perception/config/controllers.yaml` a `gamepad_node` and a teleop
+node in that robot's `robot_<id>` namespace. Each controller is chosen by its
+Bluetooth address, so it drives the same robot whatever order the
+controllers connect in, and a controller that drops is picked back up when
+it reconnects.
+
+If the smooth driving misbehaves, fall back to the older full speed
+commands without reflashing any robot:
 
 ```
-ros2 launch arena_perception robot_control.launch.py robot_count:=4
+ros2 launch arena_perception robot_control.launch.py drive_mode:=letters
 ```
-
-Robot `N` always uses joystick `N - 1`.
-
-Each controller runs in its own `robot_<id>` namespace, so every joystick
-publishes to its own `joy` topic instead of sharing one.
 
 The bridge talks to every robot it finds, so start it once. The pieces can
-also be launched separately:
+also be launched separately. `controller.launch.py` uses the standard
+`joy_node`, which picks a controller by index rather than address. That is
+fine with a single controller, for example when testing one robot on a
+laptop:
 
 ```
-ros2 launch arena_perception bridge.launch.py expected_robots:=2
+ros2 launch arena_perception bridge.launch.py expected_robots:=1
 ros2 launch arena_perception controller.launch.py robot_id:=1 joy_device_id:=0
 ```
 
+## Assigning controllers to robots
+
+Robot `N` is the board flashed with `pio run -e robot_N`. Robot 0 is the
+instructor's, and each team gets its own number from 1. Label every
+controller and board with its number.
+
+1. Pair every controller with this computer once. Hold Share and PS until
+   the light bar flashes quickly, then pick "Wireless Controller" in the
+   Ubuntu Bluetooth settings. A paired controller reconnects whenever its PS
+   button is pressed.
+2. Turn every controller on, then run:
+
+   ```
+   ros2 run arena_perception assign_controllers 0 1 2 3 4 5 6
+   ```
+
+   Press a button on each controller in the order the numbers are listed,
+   here the instructor's first and then teams 1 to 6. Without numbers the
+   tool counts from 1. Robots that are not listed keep their controller, so
+   `assign_controllers 4` swaps in a new controller for team 4 only. The tool
+   updates `config/controllers.yaml`, which can also be edited by hand.
+3. Restart `robot_control.launch.py`.
+
+A controller plugged in with a USB cable keeps the same address, so cables
+are a fallback if one Bluetooth radio struggles with every controller and
+robot at once.
+
 ## Checking the controllers
 
-A DualShock 4 registers several input devices, so the second gamepad is not
-always `js1`. List what is connected and which index to pass:
+List the connected controllers with their Bluetooth addresses:
 
 ```
 ros2 run arena_perception list_joysticks
 ```
 
-Each teleop node logs every joystick it can see at startup, with Bluetooth
-addresses, and warns if it receives no controller input or if no bridge is
-listening for its robot.
+Each `gamepad_node` logs when its controller connects or drops. Each teleop
+node warns if no controller input arrives, and stops its robot if input stops
+for `input_timeout` seconds (0.5 by default), so a controller that dies while
+a stick is held does not leave the robot driving.
 
-`joy_node` selects the device itself, so `joy_device_id` is not guaranteed to
-match `/dev/input/jsN`. To find which controller feeds which robot, start
-both controllers, then watch one topic at a time and move the sticks:
+To check which controller feeds which robot, watch one topic at a time and
+move the sticks:
 
 ```
 ros2 topic echo /robot_1/joy
 ros2 topic echo /robot_2/joy
 ```
 
-Swap the two `joy_device_id` values if a controller drives the wrong robot.
+With `controller.launch.py`, `joy_node` selects the device itself, so
+`joy_device_id` is not guaranteed to match `/dev/input/jsN`.
 
 Each teleop node logs every drive and arm command it publishes, whether or
 not a robot is connected, so the controllers can be checked before any robot
@@ -117,22 +163,25 @@ is powered on.
 
 A DualShock 4 reports axis 0 as the left stick X, axis 1 as the left stick
 Y, axis 2 as L2, axis 3 as the right stick X, axis 4 as the right stick Y
-and axis 5 as R2. Driving uses axis 1 and turning uses axis 3.
+and axis 5 as R2. Driving uses axis 1, steering uses axis 0 and spinning in
+place uses axis 3.
 
 Triggers rest at full deflection rather than centred, so using one as a
 drive or turn axis makes the robot move on its own. Each teleop node logs
 the axes it is using at startup.
 
-Joystick axes report up and left as negative, while a Twist uses positive
-for forward and positive for a left turn, so both axes are negated before
-they are published.
+`joy_node` and `gamepad_node` both report up and left as positive, which is
+also how a Twist counts forward and a left turn, so the sticks are used
+without changing sign. If a robot drives backwards, fix it on the robot with
+the direction setting in the firmware, not here, so that `cmd_vel` means the
+same thing for every robot and for autonomy.
 
 ## Controller mapping
 
 | Input | Action |
 | --- | --- |
-| Left stick | Drive forward and back |
-| Right stick | Turn |
+| Left stick | Drive forward and back, and steer while driving |
+| Right stick | Spin in place |
 | Triangle, Cross | Shoulder up, shoulder down |
 | Circle, Square | Elbow up, elbow down |
 | R1, L1 | Gripper open, gripper close |

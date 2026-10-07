@@ -2,6 +2,10 @@ import asyncio
 
 from bleak import BleakClient
 
+# A write without response carries at most 20 bytes on a default BLE link,
+# so arm commands waiting to be sent are capped well below that.
+MAX_PENDING_ARM_COMMANDS = 8
+
 
 class BleRobotLink:
 
@@ -12,19 +16,33 @@ class BleRobotLink:
         characteristic_uuid,
         logger,
         radio_lock,
-        retry_period=3.0
+        on_connect_failed=None,
+        min_write_interval=0.05
     ):
         self.robot_id = robot_id
         self.device = device
         self.characteristic_uuid = characteristic_uuid
         self.logger = logger
         self.radio_lock = radio_lock
-        self.retry_period = retry_period
+        self.on_connect_failed = on_connect_failed
+        self.min_write_interval = min_write_interval
 
         self.client = None
         self.running = True
 
-        self.pending_command = None
+        # BlueZ forgets a device shortly after it stops advertising, so a
+        # handle from an old scan cannot be reconnected. This is set whenever
+        # a scan sees the robot advertising, and cleared when connecting
+        # fails, so the link waits for a fresh handle instead of retrying a
+        # stale one forever.
+        self.device_seen = asyncio.Event()
+        self.device_seen.set()
+
+        # Only the newest drive command matters, so a new one replaces any
+        # that has not been sent yet. Arm commands each move a joint one
+        # step, so they are kept and sent in order.
+        self.pending_drive_command = None
+        self.pending_arm_commands = bytearray()
         self.command_ready = asyncio.Event()
 
     @property
@@ -33,12 +51,20 @@ class BleRobotLink:
 
     def update_device(self, device):
         self.device = device
+        self.device_seen.set()
 
     def is_connected(self):
         return self.client is not None and self.client.is_connected
 
-    def queue_command(self, command):
-        self.pending_command = command
+    def queue_drive_command(self, command):
+        self.pending_drive_command = command
+        self.command_ready.set()
+
+    def queue_arm_command(self, command):
+        if len(self.pending_arm_commands) >= MAX_PENDING_ARM_COMMANDS:
+            return
+
+        self.pending_arm_commands += command
         self.command_ready.set()
 
     async def write_pending_commands(self):
@@ -46,13 +72,23 @@ class BleRobotLink:
             await self.command_ready.wait()
             self.command_ready.clear()
 
-            command = self.pending_command
-            self.pending_command = None
+            # The robot runs every command in a write in order, so the drive
+            # command and any arm commands go out together.
+            payload = (self.pending_drive_command or b"") \
+                + bytes(self.pending_arm_commands)
 
-            if command is None:
+            self.pending_drive_command = None
+            self.pending_arm_commands.clear()
+
+            if not payload:
                 continue
 
-            await self.write_command(command)
+            await self.write_command(payload)
+
+            # Commands that arrive meanwhile are merged into the next write,
+            # so a fast stick cannot queue writes faster than the radio sends
+            # them.
+            await asyncio.sleep(self.min_write_interval)
 
     async def keep_connected(self):
         while self.running:
@@ -60,10 +96,18 @@ class BleRobotLink:
                 await asyncio.sleep(1.0)
                 continue
 
-            await self.connect_once()
+            await self.device_seen.wait()
+
+            if await self.connect_once():
+                continue
+
+            self.device_seen.clear()
+
+            if self.on_connect_failed is not None:
+                self.on_connect_failed(self.robot_id)
 
     async def connect_once(self):
-        try:
+        async with self.radio_lock:
             self.logger.info(
                 f"Connecting to robot {self.robot_id} at {self.address}"
             )
@@ -73,19 +117,20 @@ class BleRobotLink:
                 disconnected_callback=self.on_disconnected
             )
 
-            async with self.radio_lock:
+            try:
                 await client.connect()
+            except Exception as error:
+                self.logger.error(
+                    f"Robot {self.robot_id} connection failed, waiting for "
+                    f"it to advertise again: "
+                    f"{str(error) or type(error).__name__}"
+                )
+                return False
 
-            self.client = client
+        self.client = client
 
-            self.logger.info(f"Connected to robot {self.robot_id}")
-
-        except Exception as error:
-            self.logger.error(
-                f"Robot {self.robot_id} connection failed: {error}"
-            )
-            self.client = None
-            await asyncio.sleep(self.retry_period)
+        self.logger.info(f"Connected to robot {self.robot_id}")
+        return True
 
     def on_disconnected(self, client):
         self.logger.warning(f"Robot {self.robot_id} disconnected")
@@ -98,14 +143,14 @@ class BleRobotLink:
         try:
             await self.client.write_gatt_char(
                 self.characteristic_uuid,
-                command.encode("utf-8"),
+                command,
                 response=False
             )
             return True
 
         except Exception as error:
             self.logger.error(
-                f"Robot {self.robot_id} rejected '{command}': {error}"
+                f"Robot {self.robot_id} rejected {command!r}: {error}"
             )
             return False
 
@@ -116,7 +161,7 @@ class BleRobotLink:
         if not self.is_connected():
             return
 
-        await self.write_command("S")
+        await self.write_command(b"S")
 
         try:
             await self.client.disconnect()

@@ -1,0 +1,12 @@
+# Which PS4 controller drives which robot.
+#
+# Robot N is the board flashed with `pio run -e robot_N`, which advertises
+# itself as Robogame-N. Robot 0 is the instructor's. Each controller is
+# listed by its Bluetooth address, so it always drives the same robot
+# whatever order the controllers connect in. Keep the addresses in quotes.
+#
+# Update this file by pressing a button on each controller in turn:
+#     ros2 run arena_perception assign_controllers 0 1 2 3 4 5 6
+
+robots:
+  0: "A0:5A:5E:EE:F8:FA"

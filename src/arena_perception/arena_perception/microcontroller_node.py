@@ -25,6 +25,9 @@ class MicrocontrollerNode(Node):
             "characteristic_uuid",
             "beb5483e-36e1-4688-b7f5-ea07361b26a8"
         )
+        self.declare_parameter("drive_mode", "speed")
+        self.declare_parameter("full_linear_speed", 0.5)
+        self.declare_parameter("full_angular_speed", 1.5)
         self.declare_parameter("linear_threshold", 0.1)
         self.declare_parameter("angular_threshold", 0.1)
         self.declare_parameter("keepalive_period", 0.25)
@@ -32,10 +35,23 @@ class MicrocontrollerNode(Node):
         self.declare_parameter("max_scan_period", 60.0)
         self.declare_parameter("expected_robots", 0)
 
+        self.drive_mode = self.get_parameter("drive_mode").value
+
+        if self.drive_mode not in ("speed", "letters"):
+            raise ValueError(
+                f"drive_mode must be 'speed' or 'letters', "
+                f"got {self.drive_mode!r}"
+            )
+
+        self.full_linear_speed = self.get_parameter("full_linear_speed").value
+        self.full_angular_speed = self.get_parameter(
+            "full_angular_speed"
+        ).value
         self.linear_threshold = self.get_parameter("linear_threshold").value
         self.angular_threshold = self.get_parameter("angular_threshold").value
 
         self.drive_commands = {}
+        self.drive_directions = {}
         self.robot_subscriptions = {}
         self.discovered_robots = Queue()
 
@@ -63,7 +79,10 @@ class MicrocontrollerNode(Node):
             self.send_keepalive
         )
 
-        self.get_logger().info("Microcontroller bridge started")
+        self.get_logger().info(
+            f"Microcontroller bridge started, sending {self.drive_mode} "
+            "drive commands"
+        )
 
     def subscribe_to_discovered_robots(self):
         while True:
@@ -79,7 +98,7 @@ class MicrocontrollerNode(Node):
             return
 
         namespace = f"/robot_{robot_id}"
-        self.drive_commands[robot_id] = robot_commands.STOP
+        self.drive_commands[robot_id] = robot_commands.STOP.encode("ascii")
 
         self.robot_subscriptions[robot_id] = [
             self.create_subscription(
@@ -101,19 +120,41 @@ class MicrocontrollerNode(Node):
         )
 
     def cmd_vel_callback(self, robot_id, message: Twist):
-        command = robot_commands.twist_to_drive_command(
+        direction = robot_commands.twist_to_drive_command(
             message.linear.x,
             message.angular.z,
             self.linear_threshold,
             self.angular_threshold
         )
 
+        if self.drive_mode == "speed":
+            command = robot_commands.twist_to_speed_command(
+                message.linear.x,
+                message.angular.z,
+                self.full_linear_speed,
+                self.full_angular_speed
+            )
+        else:
+            command = direction.encode("ascii")
+
         if command == self.drive_commands.get(robot_id):
             return
 
         self.drive_commands[robot_id] = command
-        self.get_logger().info(f"Robot {robot_id} drive command: {command}")
-        self.fleet.send(robot_id, command)
+        self.log_drive_change(robot_id, direction, command)
+        self.fleet.send_drive_command(robot_id, command)
+
+    def log_drive_change(self, robot_id, direction, command):
+        # Speed commands change many times a second while a stick moves, so
+        # only a change of direction is logged.
+        if direction == self.drive_directions.get(robot_id):
+            return
+
+        self.drive_directions[robot_id] = direction
+        self.get_logger().info(
+            f"Robot {robot_id} drive command: "
+            f"{robot_commands.describe_drive_command(command)}"
+        )
 
     def arm_callback(self, robot_id, message: String):
         command = message.data.strip()
@@ -125,15 +166,17 @@ class MicrocontrollerNode(Node):
             return
 
         self.get_logger().info(f"Robot {robot_id} arm command: {command}")
-        self.fleet.send(robot_id, command)
+        self.fleet.send_arm_command(robot_id, command.encode("ascii"))
 
     def send_keepalive(self):
         for robot_id, command in self.drive_commands.items():
-            self.fleet.send(robot_id, command)
+            self.fleet.send_drive_command(robot_id, command)
 
     def destroy_node(self):
         for robot_id in self.drive_commands:
-            self.drive_commands[robot_id] = robot_commands.STOP
+            self.drive_commands[robot_id] = robot_commands.STOP.encode(
+                "ascii"
+            )
 
         self.fleet.stop()
         super().destroy_node()

@@ -6,7 +6,6 @@ from sensor_msgs.msg import Joy
 from std_msgs.msg import String
 
 from arena_perception import robot_commands
-from arena_perception.joystick_devices import find_joystick_devices
 
 
 class Ps4TeleopNode(Node):
@@ -15,8 +14,8 @@ class Ps4TeleopNode(Node):
         super().__init__("ps4_teleop_node")
 
         self.declare_parameter("robot_id", 1)
-        self.declare_parameter("joy_device_id", 0)
         self.declare_parameter("linear_axis", 1)
+        self.declare_parameter("steering_axis", 0)
         self.declare_parameter("angular_axis", 3)
         self.declare_parameter("max_linear_speed", 0.5)
         self.declare_parameter("max_angular_speed", 1.5)
@@ -29,14 +28,16 @@ class Ps4TeleopNode(Node):
         self.declare_parameter("gripper_open_button", 5)
         self.declare_parameter("gripper_close_button", 4)
         self.declare_parameter("arm_repeat_period", 0.15)
+        self.declare_parameter("input_timeout", 0.5)
 
         self.robot_id = self.get_parameter("robot_id").value
-        self.joy_device_id = self.get_parameter("joy_device_id").value
         self.linear_axis = self.get_parameter("linear_axis").value
+        self.steering_axis = self.get_parameter("steering_axis").value
         self.angular_axis = self.get_parameter("angular_axis").value
         self.max_linear_speed = self.get_parameter("max_linear_speed").value
         self.max_angular_speed = self.get_parameter("max_angular_speed").value
         self.deadzone = self.get_parameter("deadzone").value
+        self.input_timeout = self.get_parameter("input_timeout").value
 
         self.held_arm_buttons = {
             self.get_parameter("shoulder_up_button").value:
@@ -58,7 +59,8 @@ class Ps4TeleopNode(Node):
 
         self.button_states = []
         self.last_drive_command = None
-        self.joy_message_count = 0
+        self.last_joy_time = None
+        self.stopped_for_lost_input = False
 
         namespace = f"/robot_{self.robot_id}"
 
@@ -78,47 +80,50 @@ class Ps4TeleopNode(Node):
             self.publish_held_arm_commands
         )
 
-        self.diagnostics_timer = self.create_timer(
+        self.no_input_timer = self.create_timer(
             5.0,
-            self.warn_when_no_joy_messages
+            self.warn_when_no_input
+        )
+
+        self.input_watchdog_timer = self.create_timer(
+            0.1,
+            self.stop_when_input_lost
         )
 
         self.get_logger().info(
-            f"PS4 teleop node started for robot {self.robot_id}"
+            f"PS4 teleop node started for robot {self.robot_id}, driving "
+            f"with axis {self.linear_axis}, steering with axis "
+            f"{self.steering_axis} and spinning with axis {self.angular_axis}"
         )
 
-        self.log_joystick_devices()
+    def warn_when_no_input(self):
+        self.no_input_timer.cancel()
 
-    def log_joystick_devices(self):
-        devices = find_joystick_devices()
-
-        if not devices:
-            self.get_logger().warning(
-                "No joystick devices found under /dev/input"
-            )
-            return
-
-        self.get_logger().info(f"{len(devices)} joystick device(s) connected")
-
-        for device in devices:
-            self.get_logger().info(
-                f"  joystick {device.index}: {device.describe()}"
-            )
-
-        self.get_logger().info(
-            f"Robot {self.robot_id} is configured for joy_device_id "
-            f"{self.joy_device_id}, driving with axis {self.linear_axis} and "
-            f"turning with axis {self.angular_axis}"
-        )
-
-    def warn_when_no_joy_messages(self):
-        if self.joy_message_count > 0:
+        if self.last_joy_time is not None:
             return
 
         self.get_logger().warning(
-            f"No messages received on {self.subscription.topic_name}. "
-            f"joy_node may be reading a device other than joy_device_id "
-            f"{self.joy_device_id}, or this controller is not connected."
+            f"No controller input on {self.subscription.topic_name} yet. "
+            "Is the controller for this robot turned on?"
+        )
+
+    def stop_when_input_lost(self):
+        if self.last_joy_time is None or self.stopped_for_lost_input:
+            return
+
+        elapsed = self.get_clock().now() - self.last_joy_time
+
+        if elapsed.nanoseconds < self.input_timeout * 1e9:
+            return
+
+        # A controller that dies while a stick is held would otherwise leave
+        # the robot driving, because the bridge holds the last command.
+        self.stopped_for_lost_input = True
+        self.button_states = []
+        self.publish_twist([])
+
+        self.get_logger().warning(
+            f"Lost controller input for robot {self.robot_id}, stopping it"
         )
 
     def apply_deadzone(self, value):
@@ -135,7 +140,8 @@ class Ps4TeleopNode(Node):
             and self.button_states[index] == 1
 
     def joy_callback(self, message: Joy):
-        self.joy_message_count += 1
+        self.last_joy_time = self.get_clock().now()
+        self.stopped_for_lost_input = False
 
         self.publish_twist(message.axes)
         self.publish_pressed_arm_commands(message.buttons)
@@ -143,8 +149,14 @@ class Ps4TeleopNode(Node):
         self.button_states = list(message.buttons)
 
     def publish_twist(self, axes):
-        stick_forward = -self.read_axis(axes, self.linear_axis)
-        stick_left = -self.read_axis(axes, self.angular_axis)
+        # joy reports up and left as positive, the same way a Twist counts
+        # forward and a left turn, so the sticks are used as they are. The
+        # left stick steers while driving and the right stick spins in place,
+        # and using both adds them together.
+        stick_forward = self.read_axis(axes, self.linear_axis)
+        stick_left = self.read_axis(axes, self.steering_axis) \
+            + self.read_axis(axes, self.angular_axis)
+        stick_left = max(-1.0, min(1.0, stick_left))
 
         twist = Twist()
         twist.linear.x = stick_forward * self.max_linear_speed
@@ -202,7 +214,9 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

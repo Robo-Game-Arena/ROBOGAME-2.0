@@ -9,4 +9,5 @@
 #     ros2 run arena_perception assign_controllers 0 1 2 3 4 5 6
 
 robots:
-  0: "A0:5A:5E:EE:F8:FA"
+
+

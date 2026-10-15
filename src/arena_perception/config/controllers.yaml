@@ -9,5 +9,10 @@
 #     ros2 run arena_perception assign_controllers 0 1 2 3 4 5 6
 
 robots:
-
-
+  0: "A0:5A:5E:EE:F8:FA"
+  1: "D0:BC:C1:8B:EC:62"
+  2: "A0:5A:5E:C7:5F:3E"
+  3: "14:3A:9A:97:B8:E9"
+  4: "A0:5A:5E:EF:1F:7F"
+  5: "14:3A:9A:96:3C:BE"
+  6: "A0:5A:5F:68:37:82"
